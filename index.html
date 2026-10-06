@@ -30,13 +30,28 @@ canvas{width:100%;height:210px;background:#0f141a;border-radius:14px}.timer{font
 </style>
 </head>
 <body>
-<header class="top"><h1>Gym Coach</h1><p>Sustainable fat loss • progressive strength • v2.0</p></header>
+<header class="top"><h1>Gym Coach</h1><p>Sustainable fat loss • progressive strength • v2.1</p></header>
 <main>
 <section id="home" class="screen active">
  <div class="card hero">
   <div class="muted small">DAILY TARGET</div><div class="big">2,100 kcal</div>
   <div class="grid3" style="margin-top:11px"><div class="metric"><b>160g</b><span>protein</span></div><div class="metric"><b>8,000</b><span>steps</span></div><div class="metric"><b>4×</b><span>gym / week</span></div></div>
  </div>
+
+ <div class="card">
+  <h2>Today's nutrition & activity</h2>
+  <div class="grid2">
+   <div class="field"><label>Calories</label><input id="dailyCalories" type="number" inputmode="numeric" placeholder="2100"></div>
+   <div class="field"><label>Steps</label><input id="dailySteps" type="number" inputmode="numeric" placeholder="8000"></div>
+   <div class="field"><label>Protein (g)</label><input id="dailyProtein" type="number" inputmode="numeric" placeholder="160"></div>
+   <div class="field"><label>Carbs (g)</label><input id="dailyCarbs" type="number" inputmode="numeric" placeholder="218"></div>
+   <div class="field"><label>Fat (g)</label><input id="dailyFat" type="number" inputmode="numeric" placeholder="65"></div>
+   <div class="field"><label>Date</label><input id="dailyDate" type="date"></div>
+  </div>
+  <button class="btn primary full" onclick="saveDailyLog()">Save daily log</button>
+  <div id="dailyStatus" class="muted small" style="margin-top:8px"></div>
+ </div>
+
  <div id="coachCard" class="card coach"></div>
  <div class="card"><h2>Weekly score</h2><div id="weeklyScore"></div></div>
  <div class="card"><h2>Current programme</h2><div id="blockSummary"></div></div>
@@ -65,6 +80,7 @@ canvas{width:100%;height:210px;background:#0f141a;border-radius:14px}.timer{font
   <div class="field"><label>Average Garmin total calories / day</label><input id="checkBurn" type="number" placeholder="e.g. 2550"></div>
   <button class="btn primary full" onclick="saveCheckin()">Save weekly check-in</button>
  </div>
+ <div class="card"><h2>Recent daily nutrition & activity</h2><div id="dailyHistory"></div></div>
  <div class="card"><h2>Weight trend</h2><canvas id="weightChart" width="700" height="260"></canvas></div>
  <div class="card"><h2>Waist trend</h2><canvas id="waistChart" width="700" height="260"></canvas></div>
  <div class="card"><h2>Personal bests & estimated 1RM</h2><div id="personalBests"></div></div>
@@ -136,9 +152,9 @@ const SUBS={
 "Dumbbell bench press":["Machine chest press","Barbell bench press","Push-up"]
 };
 
-const defaults={history:[],checkins:[],completed:[],recoveries:[],settings:{startWeight:81,goalWeight:71,startDate:new Date().toISOString().slice(0,10)}};
+const defaults={history:[],checkins:[],completed:[],recoveries:[],dailyLogs:[],settings:{startWeight:81,goalWeight:71,startDate:new Date().toISOString().slice(0,10)}};
 let state=JSON.parse(localStorage.getItem("gymCoachV2")||"null")||{};
-state={...defaults,...state,settings:{...defaults.settings,...(state.settings||{})},history:state.history||[],checkins:state.checkins||[],completed:state.completed||[],recoveries:state.recoveries||[]};
+state={...defaults,...state,settings:{...defaults.settings,...(state.settings||{})},history:state.history||[],checkins:state.checkins||[],completed:state.completed||[],recoveries:state.recoveries||[],dailyLogs:state.dailyLogs||[]};
 save();
 
 function save(){localStorage.setItem("gymCoachV2",JSON.stringify(state))}
@@ -154,16 +170,22 @@ function lastEntries(ex,n=3){return state.history.filter(x=>x.exercise===ex).sli
 function parseReps(s){return ((s||"").match(/\d+/g)||[]).map(Number)}
 function e1rm(weight,reps){if(!weight||!reps)return 0;return Number(weight)*(1+Number(reps)/30)}
 function progressionSuggestion(ex,range,type){
- const hist=lastEntries(ex,3); if(!hist.length)return"Choose a conservative starting load";
- const last=hist[hist.length-1],rr=(range.match(/\d+/g)||[]),top=rr.length?Number(rr[rr.length-1]):0;
- if(!Number(last.weight)||!top)return last.weight?`Last: ${last.weight} kg`:"Log this exercise to build suggestions";
- if(isDeload())return`Deload: aim ~${Math.max(1,Number(last.weight)*0.9).toFixed(1)} kg and 1 fewer set`;
- const good=hist.filter(h=>{const r=parseReps(h.reps);return r.length&&Math.min(...r)>=top&&(!h.rpe||Number(h.rpe)<=8.5)}).length;
- const struggling=hist.length>=2&&hist.slice(-2).every(h=>{const r=parseReps(h.reps);return (r.length&&Math.min(...r)<Math.max(1,top-2))||Number(h.rpe)>=9.5});
+ const all=state.history.filter(x=>x.exercise===ex);
+ if(!all.length)return"Choose a conservative starting load";
+ const lastDate=all[all.length-1].date.slice(0,10);
+ const lastSets=all.filter(x=>x.date.slice(0,10)===lastDate);
+ const rr=(range.match(/\d+/g)||[]),top=rr.length?Number(rr[rr.length-1]):0;
+ const weighted=lastSets.filter(x=>Number(x.weight));
+ if(!weighted.length||!top)return weighted.length?`Last: ${weighted[weighted.length-1].weight} kg`:"Log this exercise to build suggestions";
+ const workingWeight=Math.max(...weighted.map(x=>Number(x.weight)));
+ if(isDeload())return`Deload: use ~${Math.max(1,workingWeight*0.9).toFixed(1)} kg and 1 fewer set`;
+ const relevant=lastSets.filter(x=>Number(x.weight)===workingWeight);
+ const hitTop=relevant.length&&relevant.every(h=>{const r=parseReps(h.reps);return r.length&&r[0]>=top&&(!h.rpe||Number(h.rpe)<=8.5)});
+ const struggled=relevant.length&&relevant.filter(h=>{const r=parseReps(h.reps);return (r.length&&r[0]<Math.max(1,top-2))||Number(h.rpe)>=9.5}).length>=Math.ceil(relevant.length/2);
  const jump=type==="lower"?5:2.5;
- if(good>=2)return`Progress: try ${(Number(last.weight)+jump).toFixed(1)} kg`;
- if(struggling)return`Recovery reset: try ${(Number(last.weight)*0.95).toFixed(1)} kg`;
- return`Repeat ${Number(last.weight).toFixed(1)} kg and beat reps/RPE`;
+ if(hitTop)return`Progress: try ${(workingWeight+jump).toFixed(1)} kg on your work sets`;
+ if(struggled)return`Recovery reset: try ${(workingWeight*0.95).toFixed(1)} kg`;
+ return`Repeat around ${workingWeight.toFixed(1)} kg and beat reps/RPE`;
 }
 function warmupFor(s){
  const first=s.ex[0],isLower=first&&first[3]==="lower";
@@ -178,33 +200,58 @@ function recoveryAdvice(){
 }
 function updateRecoveryAdvice(){const a=recoveryAdvice();document.getElementById("recoveryAdvice").textContent=a.msg}
 
+function todayISO(){return new Date().toISOString().slice(0,10)}
+function getDailyLog(date){return state.dailyLogs.find(x=>x.date===date)}
+function saveDailyLog(){
+ const date=dailyDate.value||todayISO();
+ const entry={date,calories:Number(dailyCalories.value)||0,protein:Number(dailyProtein.value)||0,carbs:Number(dailyCarbs.value)||0,fat:Number(dailyFat.value)||0,steps:Number(dailySteps.value)||0};
+ const idx=state.dailyLogs.findIndex(x=>x.date===date);
+ if(idx>=0)state.dailyLogs[idx]=entry;else state.dailyLogs.push(entry);
+ state.dailyLogs.sort((a,b)=>a.date.localeCompare(b.date));
+ save();toast("Daily log saved");renderHome();renderProgress();
+}
+function loadDailyLogForm(){
+ if(!dailyDate)return;
+ if(!dailyDate.value)dailyDate.value=todayISO();
+ const d=getDailyLog(dailyDate.value);
+ dailyCalories.value=d?.calories||"";
+ dailyProtein.value=d?.protein||"";
+ dailyCarbs.value=d?.carbs||"";
+ dailyFat.value=d?.fat||"";
+ dailySteps.value=d?.steps||"";
+ dailyStatus.textContent=d?`Saved: ${d.calories||0} kcal • ${d.protein||0}g protein • ${d.steps||0} steps`:"No log saved for this date yet.";
+}
 function renderHome(){
  const block=BLOCKS[currentBlockIndex()],deload=isDeload();
  blockSummary.innerHTML=`<div class="big" style="font-size:20px">${block.name}</div><div class="muted small">Programme week ${currentWeek()} • block week ${weekInBlock()}/4</div>${deload?`<div class="tag" style="margin-top:7px">DELOAD WEEK</div><div class="muted small" style="margin-top:5px">Use ~10% less load and roughly one fewer working set.</div>`:""}`;
  const lastW=state.checkins.length?state.checkins[state.checkins.length-1].weight:state.settings.startWeight,total=state.settings.startWeight-state.settings.goalWeight,done=state.settings.startWeight-lastW,pct=Math.max(0,Math.min(100,total?done/total*100:0));
  homeWeight.innerHTML=`<div class="row"><div><b>${Number(lastW).toFixed(1)} kg</b><div class="muted small">current</div></div><div style="text-align:right"><b>${state.settings.goalWeight} kg</b><div class="muted small">goal</div></div></div><div class="progress"><div style="width:${pct}%"></div></div><div class="muted small" style="margin-top:6px">${pct.toFixed(0)}% of goal completed</div>`;
  weekSessions.innerHTML=block.sessions.map((s,i)=>`<div class="session-card"><b>${i+1}. ${s.name}</b><span class="tag">${s.focus}</span><span class="tag">${s.ex.length} exercises</span></div>`).join("");
- populateSessions(); renderWeeklyScore(); renderCoach();
+ populateSessions(); renderWeeklyScore(); renderCoach(); loadDailyLogForm();
 }
 function renderWeeklyScore(){
- const now=new Date(),ago=new Date(now-7*86400000);
+ const now=new Date(),ago=new Date(now-6*86400000);ago.setHours(0,0,0,0);
  const sessions=state.completed.filter(x=>new Date(x.date)>=ago).length;
- const c=state.checkins.filter(x=>new Date(x.date)>=ago);
- const avgSteps=c.length?Math.round(c.reduce((a,b)=>a+(Number(b.steps)||0),0)/c.length):0;
- const protein=c.length?Math.round(c.reduce((a,b)=>a+(Number(b.proteinDays)||0),0)/c.length):0;
- const workoutPts=Math.min(40,sessions/4*40),stepPts=Math.min(30,avgSteps/8000*30),proteinPts=Math.min(30,protein/7*30),score=Math.round(workoutPts+stepPts+proteinPts);
- weeklyScore.innerHTML=`<div class="grid4"><div class="metric"><b>${sessions}/4</b><span>workouts</span></div><div class="metric"><b>${avgSteps||"—"}</b><span>avg steps</span></div><div class="metric"><b>${c.length?protein+"/7":"—"}</b><span>protein days</span></div><div class="metric"><b>${c.length?score:"—"}</b><span>score / 100</span></div></div>`;
+ const logs=state.dailyLogs.filter(x=>new Date(x.date+"T00:00:00")>=ago);
+ const avgSteps=logs.length?Math.round(logs.reduce((a,b)=>a+(Number(b.steps)||0),0)/logs.length):0;
+ const proteinDays=logs.filter(x=>Number(x.protein)>=160).length;
+ const calorieDays=logs.filter(x=>Number(x.calories)>0&&Math.abs(Number(x.calories)-2100)<=200).length;
+ const workoutPts=Math.min(40,sessions/4*40),stepPts=Math.min(25,avgSteps/8000*25),proteinPts=Math.min(20,proteinDays/Math.max(1,logs.length)*20),calPts=Math.min(15,calorieDays/Math.max(1,logs.length)*15);
+ const score=Math.round(workoutPts+stepPts+proteinPts+calPts);
+ weeklyScore.innerHTML=`<div class="grid4"><div class="metric"><b>${sessions}/4</b><span>workouts</span></div><div class="metric"><b>${avgSteps||"—"}</b><span>avg steps</span></div><div class="metric"><b>${logs.length?proteinDays+"/"+logs.length:"—"}</b><span>protein days</span></div><div class="metric"><b>${logs.length?score:"—"}</b><span>score / 100</span></div></div>`;
 }
 function renderCoach(){
  const c=state.checkins.filter(x=>Number(x.weight)).slice(-4);
- let title="Build the trend",msg="Log one weekly check-in each week. After 3–4 entries, the app will make a conservative calorie/activity recommendation.";
+ let title="Build the trend",msg="Log daily nutrition/steps and one weekly weigh-in. After 3–4 weight entries, the app will make a conservative recommendation.";
  if(c.length>=3){
   const first=c[0],last=c[c.length-1],weeks=Math.max(1,(new Date(last.date)-new Date(first.date))/604800000),rate=(Number(first.weight)-Number(last.weight))/weeks;
-  const avgSteps=c.reduce((a,b)=>a+(Number(b.steps)||0),0)/c.length;
-  const avgProtein=c.reduce((a,b)=>a+(Number(b.proteinDays)||0),0)/c.length;
+  const recentLogs=state.dailyLogs.slice(-14);
+  const avgSteps=recentLogs.length?recentLogs.reduce((a,b)=>a+(Number(b.steps)||0),0)/recentLogs.length:0;
+  const proteinRate=recentLogs.length?recentLogs.filter(x=>Number(x.protein)>=160).length/recentLogs.length:0;
+  const calorieRate=recentLogs.length?recentLogs.filter(x=>Number(x.calories)>0&&Math.abs(Number(x.calories)-2100)<=200).length/recentLogs.length:0;
   if(rate>=0.25&&rate<=0.7){title="Stay the course";msg=`Your trend is about ${rate.toFixed(2)} kg/week. Keep calories around 2,100 and maintain training/steps.`}
-  else if(rate<0.2&&avgSteps>=7500&&avgProtein>=5){title="Small adjustment only";msg=`Loss is about ${rate.toFixed(2)} kg/week despite good adherence. Consider reducing intake by only 100–150 kcal/day, then reassess after 2–3 weeks.`}
-  else if(rate<0.2){title="Improve consistency first";msg="Before cutting calories, bring average steps toward 8,000 and protein-target days toward 5–7 per week."}
+  else if(rate<0.2&&avgSteps>=7500&&proteinRate>=0.7&&calorieRate>=0.7){title="Small adjustment only";msg=`Loss is about ${rate.toFixed(2)} kg/week despite good adherence. Consider reducing intake by only 100–150 kcal/day, then reassess after 2–3 weeks.`}
+  else if(rate<0.2){title="Improve consistency first";msg="Before cutting calories, aim to average ~8,000 steps, ~160g protein, and stay close to your calorie target on most days."}
   else if(rate>0.8){title="Slow the rate slightly";msg=`Your trend is about ${rate.toFixed(2)} kg/week. Consider adding 100–150 kcal/day if energy, recovery or strength are dropping.`}
   else{title="Keep monitoring";msg=`Current loss trend is about ${rate.toFixed(2)} kg/week. Hold the plan and collect another check-in.`}
  }
@@ -219,19 +266,36 @@ function renderWorkout(){
  <div class="card"><h2>Main workout</h2>`;
  s.ex.forEach((e,i)=>{
   const options=[e[0],...(SUBS[e[0]]||[])];
-  const last=lastEntries(e[0],1)[0];
+  const recent=lastEntries(e[0],10),last=recent.length?recent[recent.length-1]:null;
   const sets=isDeload()?Math.max(1,e[1]-1):e[1];
   html+=`<div class="exercise"><div class="exercise-head"><div><div class="exercise-name">${e[0]}</div><div class="muted small">${sets} sets × ${e[2]}</div><div class="suggest">${progressionSuggestion(e[0],e[2],e[3])}</div></div>${last?`<span class="pill">last ${last.weight||"-"} kg</span>`:""}</div>
   <div class="field" style="margin-top:10px"><label>Exercise / substitution</label><select id="x${i}">${options.map(o=>`<option>${o}</option>`).join("")}</select></div>
-  <div class="exercise-grid"><div class="field"><label>Weight kg</label><input id="w${i}" type="number" step=".5"></div><div class="field"><label>Reps</label><input id="r${i}" placeholder="8,8,8"></div><div class="field wide"><label>RPE</label><input id="p${i}" type="number" min="1" max="10" step=".5"></div></div></div>`;
+  <div class="muted small" style="margin:8px 0 4px">Log every working set separately:</div>`;
+  for(let setNo=1;setNo<=sets;setNo++){
+    html+=`<div class="exercise-grid" style="border-top:1px solid var(--line);padding-top:9px">
+      <div class="field"><label>Set ${setNo} weight kg</label><input id="w${i}_${setNo}" type="number" step=".5" inputmode="decimal"></div>
+      <div class="field"><label>Set ${setNo} reps/time</label><input id="r${i}_${setNo}" placeholder="${e[2]}"></div>
+      <div class="field wide"><label>Set ${setNo} RPE</label><input id="p${i}_${setNo}" type="number" min="1" max="10" step=".5" inputmode="decimal"></div>
+    </div>`;
+  }
+  html+=`</div>`;
  });
  html+=`<button class="btn primary full" onclick="saveWorkout(${si})">Finish & save workout</button></div>`;
  workoutArea.innerHTML=html;updateRecoveryAdvice();
 }
 function saveWorkout(si){
  const bi=currentBlockIndex(),s=BLOCKS[bi].sessions[si],date=new Date().toISOString(),rec=recoveryAdvice();
- s.ex.forEach((e,i)=>{const ex=document.getElementById("x"+i).value,w=document.getElementById("w"+i).value,r=document.getElementById("r"+i).value,p=document.getElementById("p"+i).value;if(w||r)state.history.push({date,block:bi,session:s.name,exercise:ex,plannedExercise:e[0],weight:w,reps:r,rpe:p})});
- state.completed.push({date,session:s.name,block:bi});state.recoveries.push({date,session:s.name,sleep:Number(sleep.value),energy:Number(energy.value),soreness:Number(soreness.value),score:rec.score});save();toast("Workout saved");renderWorkout();
+ s.ex.forEach((e,i)=>{
+  const ex=document.getElementById("x"+i).value;
+  const sets=isDeload()?Math.max(1,e[1]-1):e[1];
+  for(let setNo=1;setNo<=sets;setNo++){
+   const w=document.getElementById(`w${i}_${setNo}`).value,r=document.getElementById(`r${i}_${setNo}`).value,p=document.getElementById(`p${i}_${setNo}`).value;
+   if(w||r)state.history.push({date,block:bi,session:s.name,exercise:ex,plannedExercise:e[0],setNumber:setNo,weight:w,reps:r,rpe:p});
+  }
+ });
+ state.completed.push({date,session:s.name,block:bi});
+ state.recoveries.push({date,session:s.name,sleep:Number(sleep.value),energy:Number(energy.value),soreness:Number(soreness.value),score:rec.score});
+ save();toast("Workout saved");renderWorkout();renderHome();
 }
 function saveCheckin(){
  const w=Number(checkWeight.value); if(!w){alert("Enter your body weight.");return}
@@ -248,11 +312,16 @@ function renderStrengthTrend(){
  const rows=Object.entries(groups).filter(([,v])=>v.length>=2).map(([k,v])=>({k,first:v[0],last:v[v.length-1],pct:(v[v.length-1]/v[0]-1)*100})).sort((a,b)=>Math.abs(b.pct)-Math.abs(a.pct)).slice(0,12);
  strengthTrend.innerHTML=rows.length?rows.map(x=>`<div class="row"><div><b>${x.k}</b><div class="muted small">${x.first.toFixed(1)} → ${x.last.toFixed(1)} kg est. 1RM</div></div><div><b>${x.pct>=0?"+":""}${x.pct.toFixed(1)}%</b></div></div>`).join(""):`<p class="muted">Repeat exercises over time to see strength trends.</p>`;
 }
+function renderDailyHistory(){
+ const rows=[...state.dailyLogs].reverse().slice(0,14);
+ dailyHistory.innerHTML=rows.length?rows.map(x=>`<div class="row"><div><b>${new Date(x.date+"T00:00:00").toLocaleDateString()}</b><div class="muted small">${x.calories||0} kcal • P ${x.protein||0}g • C ${x.carbs||0}g • F ${x.fat||0}g</div></div><div style="text-align:right"><b>${x.steps||0}</b><div class="muted small">steps</div></div></div>`).join(""):`<p class="muted">Your daily calories, macros and steps will appear here.</p>`;
+}
 function renderProgress(){
+ renderDailyHistory();
  drawChart(weightChart,state.checkins.filter(x=>x.weight).map(x=>({v:Number(x.weight)})),"kg");
  drawChart(waistChart,state.checkins.filter(x=>x.waist).map(x=>({v:Number(x.waist)})),"cm");
  renderPersonalBests();renderStrengthTrend();
- const recent=[...state.history].reverse().slice(0,25);strengthHistory.innerHTML=recent.length?recent.map(x=>`<div class="row"><div><b>${x.exercise}</b><div class="muted small">${new Date(x.date).toLocaleDateString()} • ${x.session}</div></div><div style="text-align:right"><b>${x.weight||"-"} kg</b><div class="muted small">${x.reps||"-"} reps ${x.rpe?`• RPE ${x.rpe}`:""}</div></div></div>`).join(""):`<p class="muted">Complete a workout to build history.</p>`;
+ const recent=[...state.history].reverse().slice(0,25);strengthHistory.innerHTML=recent.length?recent.map(x=>`<div class="row"><div><b>${x.exercise}</b><div class="muted small">${new Date(x.date).toLocaleDateString()} • ${x.session}</div></div><div style="text-align:right"><b>${x.weight||"-"} kg</b><div class="muted small">${x.setNumber?`Set ${x.setNumber} • `:""}${x.reps||"-"} reps ${x.rpe?`• RPE ${x.rpe}`:""}</div></div></div>`).join(""):`<p class="muted">Complete a workout to build history.</p>`;
 }
 function drawChart(c,d,unit){
  const ctx=c.getContext("2d");ctx.clearRect(0,0,c.width,c.height);ctx.fillStyle="#0f141a";ctx.fillRect(0,0,c.width,c.height);
@@ -268,7 +337,12 @@ function setTimer(s){timerSecs=s;timerRunning=false;clearInterval(timerInt);time
 function updateTimer(){timerDisplay.textContent=`${String(Math.floor(timerSecs/60)).padStart(2,"0")}:${String(timerSecs%60).padStart(2,"0")}`}
 function toggleTimer(){if(timerRunning){timerRunning=false;clearInterval(timerInt);timerBtn.textContent="Start";return}timerRunning=true;timerBtn.textContent="Pause";timerInt=setInterval(()=>{timerSecs--;updateTimer();if(timerSecs<=0){clearInterval(timerInt);timerRunning=false;timerBtn.textContent="Start";if(navigator.vibrate)navigator.vibrate([200,100,200]);toast("Rest complete")}},1000)}
 function saveSettings(){state.settings.startWeight=Number(setStartWeight.value)||81;state.settings.goalWeight=Number(setGoalWeight.value)||71;state.settings.startDate=setStartDate.value||state.settings.startDate;save();renderHome();toast("Settings saved")}
-function init(){setStartWeight.value=state.settings.startWeight;setGoalWeight.value=state.settings.goalWeight;setStartDate.value=state.settings.startDate;checkWeight.value=state.checkins.length?state.checkins[state.checkins.length-1].weight:state.settings.startWeight;renderHome();renderProgress();updateTimer()}
+function init(){
+ setStartWeight.value=state.settings.startWeight;setGoalWeight.value=state.settings.goalWeight;setStartDate.value=state.settings.startDate;
+ checkWeight.value=state.checkins.length?state.checkins[state.checkins.length-1].weight:state.settings.startWeight;
+ dailyDate.value=todayISO();dailyDate.addEventListener("change",loadDailyLogForm);loadDailyLogForm();
+ renderHome();renderProgress();updateTimer()
+}
 if("serviceWorker" in navigator && location.protocol!=="file:"){navigator.serviceWorker.register("sw.js").catch(()=>{})}
 init();
 </script>
