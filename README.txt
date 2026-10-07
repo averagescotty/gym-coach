@@ -1,12 +1,21 @@
-Gym Coach v2.1 — GitHub Pages
+Gym Coach v2.2 — GitHub Pages
 
-Upload index.html, manifest.webmanifest, sw.js and .nojekyll to the ROOT of your GitHub repository.
-Then enable: Settings > Pages > Deploy from a branch > main > /(root).
+New features:
+- Session notes
+- Tap an exercise for detailed exercise history
+- Previous working-set weights auto-fill
+- Barbell plate calculator
+- Workout duration tracking
+- 7-day volume by muscle group
+- Achievement markers
+- Local-only progress photo storage/comparison (IndexedDB)
+- Recovery trend
+- Recovery-triggered smart deloads plus scheduled deloads
+- Automatic maintenance mode at goal weight
+- Editable fat-loss/maintenance calories, protein and step targets
 
-New in v2.1:
-- Separate weight, reps/time and RPE entry for every working set
-- Daily calories, protein, carbs, fat and steps logging
-- Recent daily nutrition/activity history
-- Weekly score uses daily logs
-- Coaching recommendations use adherence from daily logs
-- Existing gymCoachV2 local storage key retained for compatibility with v2.0 data
+Data compatibility:
+- Existing app data stays under localStorage key: gymCoachV2
+- Progress photos are stored separately on the iPhone/browser in IndexedDB and are not uploaded to GitHub.
+
+Upload index.html, manifest.webmanifest, sw.js and .nojekyll to the ROOT of the same GitHub repository, commit, and keep the same GitHub Pages URL.
